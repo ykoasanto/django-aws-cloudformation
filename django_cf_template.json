@@ -1,0 +1,1035 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Create a Mezzanine Python Application Stack",
+    "Parameters": {
+        "VpcId": {
+            "Type": "String",
+            "Default": "vpc-49527031",
+            "Description": "Vpc Id to deploy to",
+            "AllowedPattern": "^vpc-[0-9a-fA-F]{8,8}"
+        },
+        "PublicSubnets": {
+            "Type": "CommaDelimitedList",
+            "Default": "subnet-c7521ba3,subnet-1694c35d,subnet-70971a2d",
+            "Description": "The list of SubnetIds for public subnets"
+        },
+        "PublicSubnetAZs": {
+            "Type": "CommaDelimitedList",
+            "Default": "us-east-1a,us-east-1c,us-east-1d",
+            "Description": "The list of Availability Zones for public subnets"
+        },
+        "PrivateSubnets": {
+            "Type": "CommaDelimitedList",
+            "Default": "subnet-0a76ff25,subnet-46721579,subnet-78c12d77",
+            "Description": "The list of SubnetIds for private subnets"
+        },
+        "PrivateSubnetAZs": {
+            "Type": "CommaDelimitedList",
+            "Default": "us-east-1b,us-east-1e,us-east-1f",
+            "Description": "The list of Availability Zones for private subnets"
+        },
+        "KeyName": {
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+            "Type": "String",
+            "Default": "mezzanine"
+        },
+        "keyEnv": {
+            "Description": "Environment (dev, qa, stage, prod)",
+            "Type": "String",
+            "Default": "dev",
+            "AllowedPattern": "dev|qa|stage|prod"
+        },
+        "InstanceWebQty": {
+            "Description": "Quantity of Web servers",
+            "Type": "Number",
+            "Default": "5"
+        },
+        "InstanceWebDesiredQty": {
+            "Description": "Quantity of Web servers",
+            "Type": "Number",
+            "Default": "1"
+        },
+        "InstanceWebType": {
+            "Description": "Web EC2 instance type",
+            "Type": "String",
+            "Default": "t2.micro",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "m1.small",
+                "m1.medium",
+                "m1.large",
+                "m1.xlarge",
+                "m2.xlarge",
+                "m2.2xlarge",
+                "m2.4xlarge",
+                "m3.xlarge",
+                "m3.2xlarge",
+                "c1.medium",
+                "c1.xlarge",
+                "cc1.4xlarge",
+                "cc2.8xlarge",
+                "cg1.4xlarge"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "InstanceWebAmi": {
+            "Description": "AMI ID for web servers",
+            "Type": "String",
+            "Default": "ami-cb9ec1b1",
+            "AllowedPattern": "^ami-[0-9a-fA-F]{8,8}"
+        },
+        "InstanceWebName": {
+            "Description": "Name of the web servers (without the unique number)",
+            "Type": "String",
+            "Default": "vir-43b73f24",
+            "AllowedPattern": "^vir-[0-9a-fA-F]{8,8}"
+        },
+        "InstanceWebAZs": {
+            "Type": "CommaDelimitedList",
+            "Default": "us-east-1a",
+            "Description": "The list of Availability Zones for the web servers"
+        },
+        "MultiAZDatabase": {
+            "Default": "false",
+            "Description": "Create a multi-AZ MySQL Amazon RDS database instance",
+            "Type": "String",
+            "AllowedValues": [
+                "true",
+                "false"
+            ],
+            "ConstraintDescription": "must be either true or false."
+        },
+        "DBClass": {
+            "Default": "db.t2.micro",
+            "Description": "Database instance class",
+            "Type": "String",
+            "AllowedValues": [
+                "db.t2.micro",
+                "db.m1.small",
+                "db.m1.large",
+                "db.m1.xlarge",
+                "db.m2.xlarge",
+                "db.m2.2xlarge",
+                "db.m2.4xlarge"
+            ],
+            "ConstraintDescription": "must select a valid database instance type."
+        },
+        "DBName": {
+            "Description": "The database name",
+            "Type": "String",
+            "Default": "MezzanineDB",
+            "MinLength": "1",
+            "MaxLength": "64",
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters."
+        },
+        "DBUsername": {
+            "Description": "The database admin account username",
+            "Type": "String",
+            "Default": "root",
+            "MinLength": "1",
+            "MaxLength": "16",
+            "AllowedPattern": "[a-zA-Z][a-zA-Z0-9]*",
+            "ConstraintDescription": "must begin with a letter and contain only alphanumeric characters."
+        },
+        "DBPassword": {
+            "NoEcho": "true",
+            "Description": "The database admin account password",
+            "Type": "String",
+            "Default": "Mezzanine123",
+            "MinLength": "8",
+            "MaxLength": "41",
+            "AllowedPattern": "[a-zA-Z0-9]*",
+            "ConstraintDescription": "must contain only alphanumeric characters."
+        },
+        "DBAllocatedStorage": {
+            "Default": "20",
+            "Description": "The size of the database (Gb)",
+            "Type": "Number",
+            "MinValue": "5",
+            "MaxValue": "1024",
+            "ConstraintDescription": "must be between 5 and 1024Gb."
+        }
+    },
+    "Resources": {
+        "LogRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "ec2.amazonaws.com"
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "LogRolePolicy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:CreateLogGroup",
+                                        "logs:CreateLogStream",
+                                        "logs:PutLogEvents",
+                                        "logs:DescribeLogStreams"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:logs:*:*:*"
+                                    ]
+                                },
+                                {
+                                    "Action": [
+                                        "s3:Get*",
+                                        "s3:List*"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ec2:AssociateAddress"
+                                    ],
+                                    "Resource": "*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "e209575d-14da-4034-97ec-0f912e696679"
+                }
+            }
+        },
+        "LogRoleInstanceProfile": {
+            "Type": "AWS::IAM::InstanceProfile",
+            "Properties": {
+                "Path": "/",
+                "Roles": [
+                    {
+                        "Ref": "LogRole"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "ba95df0f-d944-4427-8370-37290ee2b84e"
+                }
+            }
+        },
+        "CloudFormationLogs": {
+            "Type": "AWS::Logs::LogGroup",
+            "Properties": {
+                "RetentionInDays": 7
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "425ce39f-fc7d-44fa-8bef-2d546effd2a2"
+                }
+            }
+        },
+        "WebServerSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": {
+                    "Ref": "VpcId"
+                },
+                "GroupDescription": "Mezzanine Web Server SG",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "443",
+                        "ToPort": "443",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "340f9c36-d3bd-44d9-b2ad-da9acdf1259f"
+                }
+            }
+        },
+        "WebServerGroup": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "Properties": {
+                "AvailabilityZones": {
+                    "Ref": "PublicSubnetAZs"
+                },
+                "VPCZoneIdentifier": {
+                    "Ref": "PublicSubnets"
+                },
+                "LaunchConfigurationName": {
+                    "Ref": "LaunchConfig"
+                },
+                "MinSize": "1",
+                "MaxSize": {
+                    "Ref": "InstanceWebQty"
+                },
+                "DesiredCapacity": {
+                    "Ref": "InstanceWebDesiredQty"
+                },
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": {
+                            "Ref": "InstanceWebName"
+                        },
+                        "PropagateAtLaunch": true
+                    }
+                ]
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Timeout": "PT15M"
+                }
+            },
+            "UpdatePolicy": {
+                "AutoScalingRollingUpdate": {
+                    "MinInstancesInService": "1",
+                    "MaxBatchSize": "1",
+                    "PauseTime": "PT15M",
+                    "WaitOnResourceSignals": "true"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "dabb6dbf-82d6-4777-b539-c6f4bc644e4f"
+                }
+            }
+        },
+        "WebServerScaleUpPolicy": {
+            "Type": "AWS::AutoScaling::ScalingPolicy",
+            "Properties": {
+                "AdjustmentType": "ChangeInCapacity",
+                "AutoScalingGroupName": {
+                    "Ref": "WebServerGroup"
+                },
+                "Cooldown": "60",
+                "ScalingAdjustment": "1"
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "b27fcc66-6e9b-4282-8c2b-b064d9abb9fa"
+                }
+            }
+        },
+        "WebServerScaleDownPolicy": {
+            "Type": "AWS::AutoScaling::ScalingPolicy",
+            "Properties": {
+                "AdjustmentType": "ChangeInCapacity",
+                "AutoScalingGroupName": {
+                    "Ref": "WebServerGroup"
+                },
+                "Cooldown": "60",
+                "ScalingAdjustment": "-1"
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "f1795f47-7670-4548-9255-32cf8727cc3c"
+                }
+            }
+        },
+        "CPUAlarmHigh": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "AlarmDescription": "Scale-up if CPU > 90% for 10 minutes",
+                "MetricName": "CPUUtilization",
+                "Namespace": "AWS/EC2",
+                "Statistic": "Average",
+                "Period": "300",
+                "EvaluationPeriods": "2",
+                "Threshold": "90",
+                "AlarmActions": [
+                    {
+                        "Ref": "WebServerScaleUpPolicy"
+                    }
+                ],
+                "Dimensions": [
+                    {
+                        "Name": "AutoScalingGroupName",
+                        "Value": {
+                            "Ref": "WebServerGroup"
+                        }
+                    }
+                ],
+                "ComparisonOperator": "GreaterThanThreshold"
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "994017c6-8eba-489f-ba55-3f932857498e"
+                }
+            }
+        },
+        "CPUAlarmLow": {
+            "Type": "AWS::CloudWatch::Alarm",
+            "Properties": {
+                "AlarmDescription": "Scale-down if CPU < 70% for 10 minutes",
+                "MetricName": "CPUUtilization",
+                "Namespace": "AWS/EC2",
+                "Statistic": "Average",
+                "Period": "300",
+                "EvaluationPeriods": "2",
+                "Threshold": "70",
+                "AlarmActions": [
+                    {
+                        "Ref": "WebServerScaleDownPolicy"
+                    }
+                ],
+                "Dimensions": [
+                    {
+                        "Name": "AutoScalingGroupName",
+                        "Value": {
+                            "Ref": "WebServerGroup"
+                        }
+                    }
+                ],
+                "ComparisonOperator": "LessThanThreshold"
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "0e081381-d764-4536-af88-4e8c85fa35e2"
+                }
+            }
+        },
+        "LaunchConfig": {
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "configSets": {
+                        "install_all": [
+                            "install_cfn",
+                            "install_logs",
+                            "install_dbinfo",
+                            "install_codedeploy",
+                            "associate_eip"
+                        ]
+                    },
+                    "install_cfn": {
+                        "files": {
+                            "/etc/cfn/cfn-hup.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[main]\n",
+                                            "stack=",
+                                            {
+                                                "Ref": "AWS::StackId"
+                                            },
+                                            "\n",
+                                            "region=",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000400",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/etc/cfn/hooks.d/cfn-auto-reloader.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[cfn-auto-reloader-hook]\n",
+                                            "triggers=post.update\n",
+                                            "path=Resources.LaunchConfig.Metadata.AWS::CloudFormation::Init\n",
+                                            "action=/opt/aws/bin/cfn-init -v ",
+                                            "         --stack ",
+                                            {
+                                                "Ref": "AWS::StackName"
+                                            },
+                                            "         --resource LaunchConfig ",
+                                            "         --configsets install_all ",
+                                            "         --region ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n",
+                                            "runas=root\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000400",
+                                "owner": "root",
+                                "group": "root"
+                            }
+                        },
+                        "services": {
+                            "sysvinit": {
+                                "cfn-hup": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "/etc/cfn/cfn-hup.conf",
+                                        "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "install_logs": {
+                        "packages": {
+                            "yum": {
+                                "awslogs": []
+                            }
+                        },
+                        "files": {
+                            "/etc/awslogs/awslogs.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[general]\n",
+                                            "state_file= /var/awslogs/state/agent-state\n",
+                                            "[/var/log/cloud-init.log]\n",
+                                            "file = /var/log/cloud-init.log\n",
+                                            "log_group_name = ",
+                                            {
+                                                "Ref": "CloudFormationLogs"
+                                            },
+                                            "\n",
+                                            "log_stream_name = {instance_id}/cloud-init.log\n",
+                                            "datetime_format = \n",
+                                            "[/var/log/cloud-init-output.log]\n",
+                                            "file = /var/log/cloud-init-output.log\n",
+                                            "log_group_name = ",
+                                            {
+                                                "Ref": "CloudFormationLogs"
+                                            },
+                                            "\n",
+                                            "log_stream_name = {instance_id}/cloud-init-output.log\n",
+                                            "datetime_format = \n",
+                                            "[/var/log/cfn-init.log]\n",
+                                            "file = /var/log/cfn-init.log\n",
+                                            "log_group_name = ",
+                                            {
+                                                "Ref": "CloudFormationLogs"
+                                            },
+                                            "\n",
+                                            "log_stream_name = {instance_id}/cfn-init.log\n",
+                                            "datetime_format = \n",
+                                            "[/var/log/cfn-hup.log]\n",
+                                            "file = /var/log/cfn-hup.log\n",
+                                            "log_group_name = ",
+                                            {
+                                                "Ref": "CloudFormationLogs"
+                                            },
+                                            "\n",
+                                            "log_stream_name = {instance_id}/cfn-hup.log\n",
+                                            "datetime_format = \n",
+                                            "[/var/log/cfn-wire.log]\n",
+                                            "file = /var/log/cfn-wire.log\n",
+                                            "log_group_name = ",
+                                            {
+                                                "Ref": "CloudFormationLogs"
+                                            },
+                                            "\n",
+                                            "log_stream_name = {instance_id}/cfn-wire.log\n",
+                                            "datetime_format = \n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000444",
+                                "owner": "root",
+                                "group": "root"
+                            },
+                            "/etc/awslogs/awscli.conf": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "[plugins]\n",
+                                            "cwlogs = cwlogs\n",
+                                            "[default]\n",
+                                            "region = ",
+                                            {
+                                                "Ref": "AWS::Region"
+                                            },
+                                            "\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000444",
+                                "owner": "root",
+                                "group": "root"
+                            }
+                        },
+                        "commands": {
+                            "01_create_state_directory": {
+                                "command": "mkdir -p /var/awslogs/state"
+                            }
+                        },
+                        "services": {
+                            "sysvinit": {
+                                "awslogs": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true",
+                                    "files": [
+                                        "/etc/awslogs/awslogs.conf"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "install_dbinfo": {
+                        "files": {
+                            "/home/ec2-user/instanceinfo": {
+                                "content": {
+                                    "Fn::Join": [
+                                        "",
+                                        [
+                                            "db_address: ",
+                                            {
+                                                "Fn::GetAtt": [
+                                                    "DBInstance",
+                                                    "Endpoint.Address"
+                                                ]
+                                            },
+                                            "\n",
+                                            "db_name: ",
+                                            {
+                                                "Ref": "DBName"
+                                            },
+                                            "\n",
+                                            "db_user: ",
+                                            {
+                                                "Ref": "DBUsername"
+                                            },
+                                            "\n",
+                                            "db_password: ",
+                                            {
+                                                "Ref": "DBPassword"
+                                            },
+                                            "\n",
+                                            "db_port: 3306",
+                                            "\n"
+                                        ]
+                                    ]
+                                },
+                                "mode": "000644",
+                                "owner": "root",
+                                "group": "root"
+                            }
+                        }
+                    },
+                    "install_codedeploy": {
+                        "commands": {
+                            "01_download_codedeploy_agent": {
+                                "command": "wget https://aws-codedeploy-us-east-1.s3.amazonaws.com/latest/install"
+                            },
+                            "02_chmod_install_file": {
+                                "command": "chmod +x ./install"
+                            },
+                            "03_install_agent": {
+                                "command": "sudo ./install auto"
+                            }
+                        }
+                    },
+                    "associate_eip": {
+                        "commands": {
+                            "01_associate_eip": {
+                                "command": {
+                                    "Fn::Join": [ "",
+                                        [
+                                            "_metaDataURL=http://169.254.169.254/latest/meta-data\n",
+                                            "_instanceId=$(curl -s ${_metaDataURL}/instance-id)\n", 
+                                            "aws ec2 associate-address --region ", 
+                                            { "Ref": "AWS::Region" }, 
+                                            " --instance-id ${_instanceId} --allocation-id ",
+                                            { "Fn::GetAtt":  [ "ElasticIP", "AllocationId" ]}
+                                        ]
+                                    ]
+                                }
+                            }
+                            
+                        }
+                    }
+                },
+                "AWS::CloudFormation::Designer": {
+                    "id": "5f204d2c-3cf4-4fb9-b9d5-a241ccf98602"
+                }
+            },
+            "Properties": {
+                "ImageId": {
+                    "Ref": "InstanceWebAmi"
+                },
+                "SecurityGroups": [
+                    {
+                        "Ref": "WebServerSecurityGroup"
+                    }
+                ],
+                "InstanceType": {
+                    "Ref": "InstanceWebType"
+                },
+                "IamInstanceProfile": {
+                    "Ref": "LogRoleInstanceProfile"
+                },
+                "KeyName": {
+                    "Ref": "KeyName"
+                },
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -xe\n",
+                                "yum update -y aws-cfn-bootstrap\n",
+                                "/opt/aws/bin/cfn-init -v ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource LaunchConfig ",
+                                "         --configsets install_all ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n",
+                                "/opt/aws/bin/cfn-signal -e $? ",
+                                "         --stack ",
+                                {
+                                    "Ref": "AWS::StackName"
+                                },
+                                "         --resource WebServerGroup ",
+                                "         --region ",
+                                {
+                                    "Ref": "AWS::Region"
+                                },
+                                "\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "CreationPolicy": {
+                "ResourceSignal": {
+                    "Timeout": "PT15M"
+                }
+            }
+        },
+        "DBSecurityGroup": {
+            "Type": "AWS::RDS::DBSecurityGroup",
+            "Properties": {
+                "EC2VpcId": {
+                    "Ref": "VpcId"
+                },
+                "DBSecurityGroupIngress": [
+                    {
+                        "EC2SecurityGroupId": {
+                            "Ref": "WebServerSecurityGroup"
+                        }
+                    }
+                ],
+                "GroupDescription": "Web Server Access"
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "c952142b-b449-4850-b702-8680095769c2"
+                }
+            }
+        },
+        "DBSubnetGroup": {
+            "Type": "AWS::RDS::DBSubnetGroup",
+            "Properties": {
+                "DBSubnetGroupDescription": "Subnets available for the RDS DB Instance",
+                "SubnetIds": {
+                    "Ref": "PrivateSubnets"
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "9051d221-99e7-42f9-96ad-c9c388bdb6e0"
+                }
+            }
+        },
+        "DBInstance": {
+            "Type": "AWS::RDS::DBInstance",
+            "Properties": {
+                "DBName": {
+                    "Ref": "DBName"
+                },
+                "Engine": "MySQL",
+                "MultiAZ": {
+                    "Ref": "MultiAZDatabase"
+                },
+                "MasterUsername": {
+                    "Ref": "DBUsername"
+                },
+                "DBInstanceClass": {
+                    "Ref": "DBClass"
+                },
+                "AllocatedStorage": {
+                    "Ref": "DBAllocatedStorage"
+                },
+                "MasterUserPassword": {
+                    "Ref": "DBPassword"
+                },
+                "DBSubnetGroupName": {
+                    "Ref": "DBSubnetGroup"
+                },
+                "DBSecurityGroups": [
+                    {
+                        "Ref": "DBSecurityGroup"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "732eb7ab-2594-4e4a-ae4b-9fd1baace7af"
+                }
+            }
+        },
+        "ElasticIP": {
+            "Type": "AWS::EC2::EIP",
+            "Properties": {
+                "Domain": { "Ref": "VpcId" }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "60e49862-ca3c-4220-964e-3ac2f9981880"
+                }
+            }
+        }
+    },
+    "Metadata": {
+        "AWS::CloudFormation::Designer": {
+            "340f9c36-d3bd-44d9-b2ad-da9acdf1259f": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 570,
+                    "y": 90
+                },
+                "z": 1,
+                "embeds": [
+                    "c952142b-b449-4850-b702-8680095769c2"
+                ]
+            },
+            "dabb6dbf-82d6-4777-b539-c6f4bc644e4f": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 360,
+                    "y": 540
+                },
+                "z": 1,
+                "embeds": [],
+                "isassociatedwith": [
+                    "7fe522f7-1868-4311-8ecf-7292248a907d",
+                    "ffd20736-0d1d-49c8-be0c-3cd8929073c0",
+                    "5f204d2c-3cf4-4fb9-b9d5-a241ccf98602"
+                ],
+                "iscontainedinside": [
+                    "6dcde75f-289a-4b9a-a1f3-29bb264d3e37",
+                    "6be4ed2f-28cc-4ab6-9bcf-5571331021d0",
+                    "65d8b928-508d-4765-84a0-74b5497641b2"
+                ]
+            },
+            "f1795f47-7670-4548-9255-32cf8727cc3c": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 540,
+                    "y": 690
+                },
+                "z": 1,
+                "embeds": [],
+                "isassociatedwith": [
+                    "dabb6dbf-82d6-4777-b539-c6f4bc644e4f"
+                ]
+            },
+            "0e081381-d764-4536-af88-4e8c85fa35e2": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 660,
+                    "y": 600
+                },
+                "z": 1,
+                "embeds": []
+            },
+            "b27fcc66-6e9b-4282-8c2b-b064d9abb9fa": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 60,
+                    "y": 690
+                },
+                "z": 1,
+                "embeds": [],
+                "isassociatedwith": [
+                    "dabb6dbf-82d6-4777-b539-c6f4bc644e4f"
+                ]
+            },
+            "994017c6-8eba-489f-ba55-3f932857498e": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 210,
+                    "y": 690
+                },
+                "z": 1,
+                "embeds": []
+            },
+            "9051d221-99e7-42f9-96ad-c9c388bdb6e0": {
+                "size": {
+                    "width": 240,
+                    "height": 240
+                },
+                "position": {
+                    "x": 60,
+                    "y": 90
+                },
+                "z": 1,
+                "embeds": [
+                    "732eb7ab-2594-4e4a-ae4b-9fd1baace7af"
+                ]
+            },
+            "c952142b-b449-4850-b702-8680095769c2": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 0,
+                    "y": 0
+                },
+                "parent": "340f9c36-d3bd-44d9-b2ad-da9acdf1259f",
+                "embeds": [],
+                "isassociatedwith": [
+                    "340f9c36-d3bd-44d9-b2ad-da9acdf1259f"
+                ]
+            },
+            "732eb7ab-2594-4e4a-ae4b-9fd1baace7af": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 90,
+                    "y": 150
+                },
+                "z": 2,
+                "parent": "9051d221-99e7-42f9-96ad-c9c388bdb6e0",
+                "embeds": [],
+                "isassociatedwith": [
+                    "c952142b-b449-4850-b702-8680095769c2"
+                ],
+                "iscontainedinside": [
+                    "9051d221-99e7-42f9-96ad-c9c388bdb6e0",
+                    "9051d221-99e7-42f9-96ad-c9c388bdb6e0"
+                ]
+            },
+            "425ce39f-fc7d-44fa-8bef-2d546effd2a2": {
+                "size": {
+                    "width": 150,
+                    "height": 150
+                },
+                "position": {
+                    "x": 360,
+                    "y": 90
+                },
+                "z": 1,
+                "embeds": []
+            },
+            "e209575d-14da-4034-97ec-0f912e696679": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 660,
+                    "y": 90
+                },
+                "z": 1,
+                "embeds": []
+            },
+            "ba95df0f-d944-4427-8370-37290ee2b84e": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 780,
+                    "y": 90
+                },
+                "z": 1,
+                "embeds": [],
+                "isassociatedwith": [
+                    "e209575d-14da-4034-97ec-0f912e696679"
+                ]
+            },
+            "5f204d2c-3cf4-4fb9-b9d5-a241ccf98602": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 900,
+                    "y": 90
+                },
+                "z": 1,
+                "embeds": [],
+                "isassociatedwith": [
+                    "340f9c36-d3bd-44d9-b2ad-da9acdf1259f"
+                ]
+            },
+            "60e49862-ca3c-4220-964e-3ac2f9981880": {
+                "size": {
+                    "width": 60,
+                    "height": 60
+                },
+                "position": {
+                    "x": 120,
+                    "y": -50
+                },
+                "z": 1,
+                "embeds": []
+            }
+        }
+    }
+}
